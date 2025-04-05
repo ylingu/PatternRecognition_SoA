@@ -3,8 +3,11 @@
 
 #include <Eigen/Dense>
 #include <opencv2/core/types.hpp>
+#include <opencv2/objdetect.hpp>
 #include <opencv2/opencv.hpp>
 #include <vector>
+
+#include "custom_hog.h"
 
 /**
  * @class FeatureExtraction
@@ -237,12 +240,12 @@ public:
  */
 class HOGFeatureExtraction : public FeatureExtraction {
 private:
-    cv::HOGDescriptor hog_;  ///< HOG descriptor.
-    cv::Size win_size_;      ///< Window size for HOG computation.
-    cv::Size block_size_;    ///< Block size for HOG computation.
-    cv::Size block_stride_;  ///< Block stride for HOG computation.
-    cv::Size cell_size_;     ///< Cell size for HOG computation.
-    int nbins_;              ///< Number of bins for HOG computation.
+    CustomHOGDescriptor hog_;  ///< Custom HOG descriptor.
+    cv::Size win_size_;        ///< Window size for HOG computation.
+    cv::Size block_size_;      ///< Block size for HOG computation.
+    cv::Size block_stride_;    ///< Block stride for HOG computation.
+    cv::Size cell_size_;       ///< Cell size for HOG computation.
+    int nbins_;                ///< Number of bins for HOG computation.
 public:
     /**
      * @brief This class is used for extracting HOG features from images.
@@ -254,8 +257,8 @@ public:
      * image classification, and other computer vision tasks.
      *
      * @param win_size Optional parameter specifying the window size for HOG
-     * computation. Default is cv::Size(64, 128). The window size determines the
-     * size of the detection window used for computing the HOG descriptor.
+     * computation. Default is cv::Size(160, 120). The window size determines
+     * the size of the detection window used for computing the HOG descriptor.
      * @param block_size Optional parameter specifying the block size for HOG
      * computation. Default is cv::Size(16, 16). The block size defines the
      * spatial region over which the HOG descriptor is computed.
@@ -280,12 +283,12 @@ public:
           block_stride_(block_stride),
           cell_size_(cell_size),
           nbins_(nbins) {
-        hog_ = cv::HOGDescriptor(
+            auto a= cv::HOGDescriptor();
+        hog_ = CustomHOGDescriptor(
             win_size_, block_size_, block_stride_, cell_size_, nbins_);
     }
 
     /**
-     * @
      * @brief Extracts HOG features from a single image.
      *
      * This method overrides the pure virtual method from the FeatureExtraction

@@ -1,51 +1,61 @@
-#include <Eigen/Dense>
-#include <print>
-#include <iostream>
-#include <opencv2/core/eigen.hpp>
-#include <opencv2/opencv.hpp>
-#include <vector>
+#include <opencv2/imgcodecs.hpp>
 
-#include "linear_classifier.h"
-#include "nonlinear_classifier.h"
+#include "feature_extraction.h"
 
-using namespace Eigen;
-using namespace std;
+cv::Mat visualizeHOGFeatures(const cv::Mat& img,
+                             const Eigen::VectorXd& descriptors,
+                             cv::Size win_size,
+                             cv::Size cell_size,
+                             int nbins) {
+    cv::Mat vis;
+    cv::resize(img, vis, win_size);
+    cv::cvtColor(vis, vis, cv::COLOR_GRAY2BGR);
 
-int main() {
-    // *定义两个类别的数据
-    MatrixXd x_1(2, 2);
-    x_1 << 0, 1, 0, 2;
-    MatrixXd x_2(2, 2);
-    x_2 << 1, 3, -1, 0;
-    Vector4d b;
-    b << 1, 1, 1, 1;
-    Vector2d x(5, 0);
-    // *求最小平方误差准则的权重向量
-    LeastSquaresCriterion c;
-    LinearClassifier lc(&c);
-    lc.Train(x_1, x_2, b);
-    // *使用垂直平分分类器
-    VerticalBisectorClassifier vbc;
-    vbc.Train(x_1, x_2);
-    print("vbc.predict(x) = {}\n", vbc.Predict(x));
-    // *使用fisher准则
-    cout << "fisher(X_1, X_2) = " << Fisher(x_1, x_2) << endl;
-    // *使用kNN分类器
-    KNNClassifier knn(1);
-    vector<pair<VectorXd, int>> data;
-    data.push_back(make_pair(Vector2d(2, 2), 0));
-    data.push_back(make_pair(Vector2d(2, 3), 0));
-    data.push_back(make_pair(Vector2d(1, 2), 0));
-    data.push_back(make_pair(Vector2d(2, 1), 0));
-    data.push_back(make_pair(Vector2d(-2, -2), 1));
-    data.push_back(make_pair(Vector2d(-3, -2), 1));
-    data.push_back(make_pair(Vector2d(-1, -2), 1));
-    data.push_back(make_pair(Vector2d(-2, -3), 1));
-    knn.Fit(data);
-    vector<VectorXd> test;
-    test.push_back(Vector2d(-1, -1));
-    test.push_back(Vector2d(3, 2));
-    auto res = knn.Predict(test);
-    print("result = {{{}, {}}}\n", res[0], res[1]);
+    int cells_x = win_size.width / cell_size.width;
+    int cells_y = win_size.height / cell_size.height;
+
+    // 遍历每个 cell
+    for (int y = 0; y < cells_y; y++) {
+        for (int x = 0; x < cells_x; x++) {
+            int offset = (y * cells_x + x) * nbins;
+            // cell 中心
+            cv::Point cell_center(x * cell_size.width + cell_size.width / 2,
+                                  y * cell_size.height + cell_size.height / 2);
+            // 对每个 bin 绘制一个方向线段
+            for (int bin = 0; bin < nbins; bin++) {
+                // 计算 bin 对应角度（范围：[0, π]）
+                float angle = bin * CV_PI / nbins;
+                // 获取该 bin 的权重（幅值）
+                float magnitude = descriptors[offset + bin];
+
+                // 设定缩放系数以便可视化
+                float scale = 10.0f;
+                int dx = static_cast<int>(scale * magnitude * std::cos(angle));
+                int dy = static_cast<int>(scale * magnitude * std::sin(angle));
+
+                cv::Point pt1 = cell_center;
+                cv::Point pt2 = cell_center + cv::Point(dx, dy);
+                cv::arrowedLine(
+                    vis, pt1, pt2, cv::Scalar(0, 0, 255), 1, cv::LINE_AA);
+            }
+        }
+    }
+    return vis;
+}
+
+auto main() -> int {
+    cv::Mat img = cv::imread("Lenna.png");
+
+    // Create an instance of HOGFeatureExtraction
+    auto hog_extractor = HOGFeatureExtraction(cv::Size(64, 128));
+
+    // Extract HOG features
+    auto hog_features = hog_extractor.Extract(img);
+
+    auto hog_vis = visualizeHOGFeatures(
+        img, hog_features, cv::Size(64, 128), cv::Size(8, 8), 9);
+
+    cv::imwrite("hog.png", hog_vis);
+
     return 0;
 }
