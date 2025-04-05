@@ -283,7 +283,6 @@ public:
           block_stride_(block_stride),
           cell_size_(cell_size),
           nbins_(nbins) {
-            auto a= cv::HOGDescriptor();
         hog_ = CustomHOGDescriptor(
             win_size_, block_size_, block_stride_, cell_size_, nbins_);
     }

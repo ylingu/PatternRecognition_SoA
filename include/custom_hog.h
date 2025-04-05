@@ -184,9 +184,9 @@ public:
         std::vector<float> cell_histograms(cells_x * cells_y * nbins_);
 
         // Compute cell histograms
-        for (int y = 0; y < cells_y; y++) {
-            for (int x = 0; x < cells_x; x++) {
-                int offset = (y * cells_x + x) * nbins_;
+        for (int x = 0; x < cells_x; x++) {
+            for (int y = 0; y < cells_y; y++) {
+                int offset = (x * cells_y + y) * nbins_;
                 calculateCellHistogram(
                     magnitude, orientation, x, y, &cell_histograms[offset]);
             }
@@ -221,8 +221,8 @@ public:
                     (by * blocks_x + bx) * histogram_size_per_block;
 
                 // Copy and normalize block histograms
-                for (int cy = 0; cy < cells_per_block_y; cy++) {
-                    for (int cx = 0; cx < cells_per_block_x; cx++) {
+                for (int cx = 0; cx < cells_per_block_x; cx++) {
+                    for (int cy = 0; cy < cells_per_block_y; cy++) {
                         // Cell position in overall histogram array
                         int cell_idx =
                             ((cell_y + cy) * cells_x + (cell_x + cx)) * nbins_;
