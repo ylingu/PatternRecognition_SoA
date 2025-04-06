@@ -1,7 +1,4 @@
-#include <opencv2/core/hal/interface.h>
-
-#include <opencv2/core.hpp>
-#include <opencv2/core/base.hpp>
+#include <bitset>
 #include <opencv2/opencv.hpp>
 
 #include "feature_extraction.h"
@@ -137,44 +134,142 @@ auto HOGFeatureExtraction::BatchExtract(const std::vector<cv::Mat> &data)
     return features;
 }
 
-auto LBPFeatureExtraction::Extract(const cv::Mat &img) -> Eigen::VectorXd {
-    CV_Assert(img.channels() == 1);
-    cv::Mat dest = cv::Mat::zeros(img.size(), CV_8U);
+auto LBPFeatureExtraction::GetLBPMat(const cv::Mat &img) -> cv::Mat {
+    // 使用32位整数Mat存储LBP码，避免高维LBP信息截断
+    cv::Mat dest = cv::Mat::zeros(img.size(), CV_32S);
+    // 对图像中的每个像素计算LBP值
     for (int i = 0; i != img.rows; ++i) {
         for (int j = 0; j != img.cols; ++j) {
             if (i < radius_ || i >= img.rows - radius_ || j < radius_ ||
                 j >= img.cols - radius_) {
                 continue;
             }
+
             double center = img.at<uchar>(i, j);
-            unsigned char code = 0;
+            std::bitset<32> code;  // 使用32位bitset存储LBP码
+
+            // 计算基本LBP码
             for (int p = 0; p != neighbors_; ++p) {
                 double theta = 2 * CV_PI * p / neighbors_;
                 double x = j + radius_ * cos(theta),
                        y = i - radius_ * sin(theta);
                 double val = BilinearInterpolation(img, x, y);
-                code |= (val > center) << p;
+
+                if (val > center) {
+                    code.set(p);
+                }
             }
-            dest.at<uchar>(i, j) = code;
+
+            uint32_t final_code = 0;
+
+            // 根据LBP类型处理LBP码
+            switch (lbp_type_) {
+                case LBPType::Circular:
+                    // 标准圆形LBP，直接使用完整码
+                    final_code = static_cast<uint32_t>(code.to_ulong());
+                    break;
+                case LBPType::Rotation:
+                    // 旋转不变LBP，找到循环移位最小值
+                    {
+                        uint32_t min_rot =
+                            static_cast<uint32_t>(code.to_ulong());
+                        for (int r = 1; r < neighbors_; r++) {
+                            // 循环右移，保持位数为neighbors_
+                            uint32_t rot_val =
+                                ((code.to_ulong() >> r) |
+                                 (code.to_ulong() << (neighbors_ - r))) &
+                                ((1UL << neighbors_) - 1);
+                            min_rot = std::min(min_rot, rot_val);
+                        }
+                        final_code = min_rot;
+                    }
+                    break;
+                case LBPType::Uniform:
+                    // 等价模式LBP处理
+                    {
+                        if (look_up_.find(code.to_ulong()) != look_up_.end()) {
+                            final_code = look_up_[code.to_ulong()];
+                        } else {
+                            // 如果不是等价模式，使用最大值
+                            final_code = look_up_.size();
+                        }
+                    }
+                    break;
+            }
+            dest.at<int>(i, j) = static_cast<int>(final_code);
         }
     }
+    return dest;
+}
+
+
+auto LBPFeatureExtraction::Extract(const cv::Mat &img) -> Eigen::VectorXd {
+    CV_Assert(img.channels() == 1);
+
+    // 计算直方图的大小
+    int hist_size = 0;
+    switch (lbp_type_) {
+        case LBPType::Circular:
+            hist_size = (1 << neighbors_);  // 2^neighbors
+            break;
+        case LBPType::Rotation:
+            hist_size = 4116;  // 旋转不变LBP的直方图大小
+            break;
+        case LBPType::Uniform:
+            hist_size =
+                neighbors_ * (neighbors_ - 1) + 3;  // 等价模式LBP的直方图大小
+            break;
+    }
+    // 计算LBP矩阵
+    auto dest = GetLBPMat(img);
+    auto dest_float = cv::Mat();
+    dest.convertTo(dest_float, CV_32F);
+
+    // 计算直方图
     cv::Mat hist;
-    int hist_size = pow(2, neighbors_);
+
+    // 对于可控维度的LBP，直接使用OpenCV的calcHist
+    int channels[] = {0};
+    int histSize[] = {hist_size};
     float range[] = {0, static_cast<float>(hist_size)};
-    const float *hist_range[] = {range};
-    cv::calcHist(&dest, 1, 0, cv::Mat(), hist, 1, &hist_size, hist_range);
+    const float *ranges[] = {range};
+    cv::calcHist(&dest_float, 1, channels, cv::Mat(), hist, 1, &hist_size, ranges);
+
+    // 归一化直方图
     hist /= dest.total();
-    Eigen::Map<Eigen::VectorXf> feature(hist.ptr<float>(), hist_size);
-    return feature.cast<double>();
+
+    // 转换为Eigen::VectorXd并返回
+    Eigen::VectorXd feature(hist_size);
+    for (int i = 0; i < hist_size; i++) {
+        feature(i) = hist.at<float>(i);
+    }
+    return feature;
 }
 
 auto LBPFeatureExtraction::BatchExtract(const std::vector<cv::Mat> &data)
     -> Eigen::MatrixXd {
-    Eigen::MatrixXd features(data.size(), static_cast<int>(pow(2, neighbors_)));
+    // 确定特征向量的维度
+    int feature_dimension = 0;
+    switch (lbp_type_) {
+        case LBPType::Circular:
+            feature_dimension = (1 << neighbors_);  // 2^neighbors
+            break;
+        case LBPType::Rotation:
+            feature_dimension = 4116;  // 旋转不变LBP的直方图大小
+            break;
+        case LBPType::Uniform:
+            feature_dimension =
+                neighbors_ * (neighbors_ - 1) + 3;  // 等价模式LBP的直方图大小
+            break;
+    }
+
+    Eigen::MatrixXd features(data.size(), feature_dimension);
+
     for (auto it = data.begin(); it != data.end(); it++) {
         auto img = Compress(*it);
         auto feature = Extract(img);
         features.row(std::distance(data.begin(), it)) = feature;
     }
+
     return features;
 }

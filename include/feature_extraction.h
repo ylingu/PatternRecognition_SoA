@@ -2,9 +2,9 @@
 #define FEATURE_EXTRACTION_H
 
 #include <Eigen/Dense>
-#include <opencv2/core/types.hpp>
-#include <opencv2/objdetect.hpp>
+#include <cstdint>
 #include <opencv2/opencv.hpp>
+#include <unordered_map>
 #include <vector>
 
 #include "custom_hog.h"
@@ -314,10 +314,8 @@ public:
 };
 
 class LBPFeatureExtraction : public FeatureExtraction {
-private:
-    int radius_;     ///< Radius for LBP computation.
-    int neighbors_;  ///< Number of neighbors for LBP computation.
 public:
+    enum class LBPType { Circular, Rotation, Uniform };
     /**
      * @brief Constructs an LBPFeatureExtraction object with specified radius
      * and number of neighbors.
@@ -325,9 +323,41 @@ public:
      * @param radius The radius parameter for LBP computation. Default is 1.
      * @param neighbors The number of neighbors parameter for LBP computation.
      * Default is 8.
+     * @param lbp_type Optional parameter specifying the type of LBP to be
+     * computed. Default is LBPType::Circular.
      */
-    LBPFeatureExtraction(int radius = 1, int neighbors = 8)
-        : radius_(radius), neighbors_(neighbors) {}
+    LBPFeatureExtraction(int radius = 1,
+                         int neighbors = 8,
+                         LBPType lbp_type = LBPType::Circular)
+        : radius_(radius), neighbors_(neighbors), lbp_type_(lbp_type) {
+        if (lbp_type == LBPType::Circular) {
+            CV_Assert(neighbors <= 12);
+        } else if (lbp_type == LBPType::Rotation) {
+            CV_Assert(neighbors <= 16);
+        } else if (lbp_type == LBPType::Uniform) {
+            CV_Assert(neighbors <= 32);
+            // 0和2^n-1是等价模式（全0和全1）
+            look_up_[0] = 0;
+            look_up_[(1 << neighbors_) - 1] = 1;
+
+            int idx = 2;  // 从索引2开始分配
+
+            // 生成所有连续的1的模式（跳变次数为2）
+            for (int i = 0; i < neighbors_; i++) {
+                for (int len = 1; len < neighbors_; len++) {
+                    uint32_t pattern = 0;
+                    // 从位置i开始，连续len个1
+                    for (int j = 0; j < len; j++) {
+                        pattern |= (1 << ((i + j) % neighbors_));
+                    }
+                    // 只有当该模式尚未在映射表中时才添加它
+                    if (look_up_.find(pattern) == look_up_.end()) {
+                        look_up_[pattern] = idx++;
+                    }
+                }
+            }
+        }
+    }
 
     /**
      * @brief Performs bilinear interpolation on an image at a given point.
@@ -360,6 +390,22 @@ public:
     }
 
     /**
+     * @brief Computes the LBP (Local Binary Pattern) matrix for a given image.
+     *
+     * This function calculates the LBP values for each pixel in the image
+     * based on the specified radius and number of neighbors. The LBP values are
+     * stored in a cv::Mat object, which can be used for further processing or
+     * feature extraction.
+     *
+     * @param img The source image as a cv::Mat object. The image should be a
+     * single-channel (grayscale) image for the LBP computation to work
+     * correctly.
+     * @return A cv::Mat object containing the computed LBP values for each
+     * pixel in the input image. The type of the returned matrix is CV_32S.
+     */
+    auto GetLBPMat(const cv::Mat &img) -> cv::Mat;
+
+    /**
      * @brief Extracts LBP features from a single image.
      *
      * This method overrides the pure virtual method from the FeatureExtraction
@@ -383,5 +429,12 @@ public:
      */
     auto BatchExtract(const std::vector<cv::Mat> &data)
         -> Eigen::MatrixXd override;
+
+private:
+    int radius_;        ///< Radius for LBP computation.
+    int neighbors_;     ///< Number of neighbors for LBP computation.
+    LBPType lbp_type_;  ///< Type of LBP to be computed.
+    std::unordered_map<uint32_t, int>
+        look_up_;  ///< Lookup table for LBP computation.
 };
 #endif  // FEATURE_EXTRACTION_H
