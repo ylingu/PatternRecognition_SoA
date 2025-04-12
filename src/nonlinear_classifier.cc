@@ -196,6 +196,19 @@ auto SVMClassifier::Predict(const cv::Mat &test_data_mat,
     return std::vector<int>(result.begin<float>(), result.end<float>());
 }
 
+auto SVMClassifier::PredictRaw(const cv::Mat &test_data_mat)
+    -> std::vector<float> {
+    assert(svm_ != nullptr);
+    cv::Mat result;
+    svm_->predict(test_data_mat, result, cv::ml::StatModel::RAW_OUTPUT);
+    if (result.empty() || result.type() != CV_32F ||
+        result.rows != test_data_mat.rows || result.cols != 1) {
+        throw std::runtime_error("SVM prediction failed.");
+    }
+    return std::vector<float>(result.begin<float>(), result.end<float>());
+}
+
+
 auto DecisionTree::CalcEntropy(const std::vector<std::string> &labels)
     -> double {
     std::map<std::string, int> count;

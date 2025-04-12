@@ -162,6 +162,13 @@ public:
         -> std::vector<int>;
 
     /**
+     * @brief Predict the raw scores of the test data.
+     * @param test_data_mat The test data.
+     * @return The predicted raw scores.
+     */
+    auto PredictRaw(const cv::Mat &test_data_mat) -> std::vector<float>;
+
+    /**
      * @brief Save the trained model.
      * @param filepath The path to save the model. Default is "model.xml".
      */

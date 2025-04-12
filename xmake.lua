@@ -1,21 +1,16 @@
 add_rules("mode.debug", "mode.release")
 set_languages("cxx23")
-add_requires("opencv", "eigen", "zlib")
+add_requires("opencv", "eigen", "pugixml")
+set_policy("build.c++.gcc.modules.cxx11abi", true)
+-- add_rules("plugin.compile_commands.autoupdate", {outputdir = ".vscode"})
 
 target("library")
     set_kind("shared")
     add_files("src/*.cc")
+    add_files("src/*.cppm", {public = true})
     add_includedirs("include", {public = true})
-    add_packages("opencv", "eigen")
+    add_packages("opencv", "eigen","pugixml", {public = true})
 
 target("main")
     add_files("*.cc")
-    add_packages("opencv", "eigen")
     add_deps("library")
-
-for i = 1, 5 do
-    target("exp" .. i)
-        add_files("examples/exp" .. i .. ".cc")
-        add_packages("opencv", "eigen", "zlib")
-        add_deps("library")
-end
